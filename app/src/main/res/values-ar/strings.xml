@@ -1,0 +1,48 @@
+<resources>
+    <string name="app_name">ذمّة</string>
+    <string name="nav_home">الرئيسية</string>
+    <string name="nav_people">الأشخاص</string>
+    <string name="nav_history">السجل</string>
+    <string name="nav_settings">الإعدادات</string>
+
+    <string name="owed_to_me">إلك (مستحقات)</string>
+    <string name="i_owe">عليك (التزامات)</string>
+    <string name="people_count">%d أشخاص</string>
+    <string name="recent_activity">النشاط الأخير</string>
+    <string name="add_new_debt">إضافة دين جديد</string>
+    <string name="record_payment">تسجيل دفعة</string>
+    <string name="view_all">عرض الكل</string>
+
+    <string name="new_debt">دين جديد</string>
+    <string name="debt_type">نوع الدين</string>
+    <string name="they_owe_me">لهم عندي (إلك)</string>
+    <string name="i_owe_them">لي عندهم (عليك)</string>
+    <string name="person">الشخص</string>
+    <string name="select_person">اختر أو أضف شخصاً</string>
+    <string name="amount">المبلغ</string>
+    <string name="currency">العملة</string>
+    <string name="date">التاريخ</string>
+    <string name="due_date">تاريخ الاستحقاق</string>
+    <string name="description">السبب / الوصف</string>
+    <string name="notes">ملاحظات</string>
+    <string name="save">حفظ</string>
+    <string name="cancel">إلغاء</string>
+
+    <string name="remaining_amount">المبلغ المتبقي: %s</string>
+    <string name="original_amount">المبلغ الأصلي: %s</string>
+    <string name="status_unpaid">غير مدفوع</string>
+    <string name="status_partially_paid">مدفوع جزئياً</string>
+    <string name="status_paid">مدفوع بالكامل</string>
+
+    <string name="search_hint">بحث عن الأشخاص، الوصف...</string>
+    <string name="filter_all">الكل</string>
+    <string name="filter_owed_to_me">إلك</string>
+    <string name="filter_i_owe">عليك</string>
+    <string name="filter_settled">المسددة</string>
+
+    <string name="language">اللغة</string>
+    <string name="english">English</string>
+    <string name="arabic">العربية</string>
+    <string name="backup_restore">النسخ الاحتياطي والاستعادة</string>
+    <string name="settings">الإعدادات</string>
+</resources>

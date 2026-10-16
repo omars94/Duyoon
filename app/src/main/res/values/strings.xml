@@ -1,0 +1,48 @@
+<resources>
+    <string name="app_name">Thimma</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_people">People</string>
+    <string name="nav_history">History</string>
+    <string name="nav_settings">Settings</string>
+
+    <string name="owed_to_me">Owed to me</string>
+    <string name="i_owe">I owe</string>
+    <string name="people_count">%d people</string>
+    <string name="recent_activity">Recent activity</string>
+    <string name="add_new_debt">Add New Debt</string>
+    <string name="record_payment">Record Payment</string>
+    <string name="view_all">View all</string>
+
+    <string name="new_debt">New Debt</string>
+    <string name="debt_type">Debt Type</string>
+    <string name="they_owe_me">They owe me (إلك)</string>
+    <string name="i_owe_them">I owe them (عليك)</string>
+    <string name="person">Person</string>
+    <string name="select_person">Select or Add Person</string>
+    <string name="amount">Amount</string>
+    <string name="currency">Currency</string>
+    <string name="date">Date</string>
+    <string name="due_date">Due Date (تاريخ الاستحقاق)</string>
+    <string name="description">Description (Reason)</string>
+    <string name="notes">Notes</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+
+    <string name="remaining_amount">Remaining: %s</string>
+    <string name="original_amount">Original: %s</string>
+    <string name="status_unpaid">Unpaid</string>
+    <string name="status_partially_paid">Partially Paid</string>
+    <string name="status_paid">Paid</string>
+
+    <string name="search_hint">Search persons, descriptions...</string>
+    <string name="filter_all">All</string>
+    <string name="filter_owed_to_me">Owe me</string>
+    <string name="filter_i_owe">I owe</string>
+    <string name="filter_settled">Settled</string>
+
+    <string name="language">Language</string>
+    <string name="english">English</string>
+    <string name="arabic">العربية</string>
+    <string name="backup_restore">Backup &amp; Restore</string>
+    <string name="settings">Settings</string>
+</resources>
