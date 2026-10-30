@@ -10,6 +10,7 @@ data class PersonEntity(
     val name: String,
     val phone: String? = null,
     val photoUri: String? = null,
+    val contactId: String? = null,
     val notes: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
@@ -20,7 +21,7 @@ data class DebtEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0L,
     val personId: Long,
-    val direction: String, // "RECEIVABLE" (They owe me) or "PAYABLE" (I owe them)
+    val direction: String, // "RECEIVABLE" (Lend) or "PAYABLE" (Borrow)
     val originalAmount: Double,
     val currency: String, // USD, LBP, EUR, SAR, AED, etc.
     val description: String? = null,

@@ -1,7 +1,12 @@
 package com.example.duyoon.ui.screens
 
+import android.Manifest
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.pdf.PdfDocument
 import android.net.Uri
+import android.provider.ContactsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -25,12 +30,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.example.duyoon.R
 import com.example.duyoon.data.DebtEntity
 import com.example.duyoon.data.PaymentEntity
+import com.example.duyoon.data.PersonEntity
 import com.example.duyoon.ui.theme.PrimaryGreen
 import com.example.duyoon.ui.theme.SecondaryOrange
 import com.example.duyoon.ui.viewmodel.ThimmaViewModel
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -64,14 +73,98 @@ fun PersonDetailScreen(
     var editPhone by remember(person) { mutableStateOf(person?.phone ?: "") }
     var editPhotoUri by remember(person) { mutableStateOf(person?.photoUri) }
 
+    LaunchedEffect(person) {
+        if (person != null) {
+            editName = person.name
+            editPhone = person.phone ?: ""
+            editPhotoUri = person.photoUri
+        }
+    }
+
     // Share options dialog state
     var showShareDialog by remember { mutableStateOf(false) }
+    var showWhatsAppAppChooserDialog by remember { mutableStateOf(false) }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
             editPhotoUri = uri.toString()
+        }
+    }
+
+    // Link Contact Launcher
+    val linkContactLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickContact()
+    ) { uri ->
+        if (uri != null && person != null) {
+            try {
+                var name: String? = null
+                var phone: String? = null
+
+                val cursor = context.contentResolver.query(uri, null, null, null, null)
+                cursor?.use { c ->
+                    if (c.moveToFirst()) {
+                        val nameIdx = c.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME)
+                        if (nameIdx >= 0) name = c.getString(nameIdx)
+
+                        val phoneIdx = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                        if (phoneIdx >= 0) {
+                            phone = c.getString(phoneIdx)
+                        } else {
+                            val idIdx = c.getColumnIndex(ContactsContract.Contacts._ID)
+                            if (idIdx >= 0) {
+                                val contactId = c.getString(idIdx)
+                                val pCursor = context.contentResolver.query(
+                                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                                    arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                                    "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
+                                    arrayOf(contactId),
+                                    null
+                                )
+                                pCursor?.use { pc ->
+                                    if (pc.moveToFirst()) {
+                                        phone = pc.getString(0)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                val finalName = name?.trim()?.ifEmpty { person.name } ?: person.name
+                val finalPhone = phone?.trim() ?: person.phone
+
+                editName = finalName
+                editPhone = finalPhone ?: ""
+
+                val updated = person.copy(
+                    name = finalName,
+                    phone = finalPhone,
+                    updatedAt = System.currentTimeMillis()
+                )
+                viewModel.updatePerson(updated)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // Permission Launcher
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            linkContactLauncher.launch(null)
+        }
+    }
+
+    val launchLinkContact = {
+        val permissionState = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS)
+        if (permissionState == PackageManager.PERMISSION_GRANTED) {
+            linkContactLauncher.launch(null)
+        } else {
+            permissionLauncher.launch(Manifest.permission.READ_CONTACTS)
         }
     }
 
@@ -83,23 +176,135 @@ fun PersonDetailScreen(
         statementBuilder.append("📊 Account Statement — ${person?.name ?: ""}\n")
         statementBuilder.append("Thimma (ذمّة) Debt Tracker\n\n")
 
-        personDebts.forEach { debt ->
-            val debtPayments = payments.filter { it.debtId == debt.id }
-            val totalPaid = debtPayments.sumOf { it.amount }
-            val remaining = debt.originalAmount - totalPaid
-            val directionStr = if (debt.direction == "RECEIVABLE") "They owe me" else "I owe"
-            statementBuilder.append("· [$directionStr] ${debt.currency} ${String.format(Locale.US, "%.2f", debt.originalAmount)} (${debt.description ?: "General"})\n")
-            statementBuilder.append("  Remaining: ${debt.currency} ${String.format(Locale.US, "%.2f", remaining)}\n")
-            if (debtPayments.isNotEmpty()) {
-                statementBuilder.append("  Payments:\n")
-                debtPayments.forEach { p ->
-                    statementBuilder.append("    - Paid ${p.currency} ${String.format(Locale.US, "%.2f", p.amount)} on ${dateFormat.format(Date(p.paymentDate))}\n")
+        val lendDebts = personDebts.filter { it.direction == "RECEIVABLE" }
+        val borrowDebts = personDebts.filter { it.direction == "PAYABLE" }
+
+        val lendTotalsByCurrency = mutableMapOf<String, Double>()
+        val borrowTotalsByCurrency = mutableMapOf<String, Double>()
+
+        if (lendDebts.isNotEmpty()) {
+            statementBuilder.append("🟢 Lend List (إقراض):\n")
+            lendDebts.forEach { debt ->
+                val debtPayments = payments.filter { it.debtId == debt.id }
+                val remaining = debt.originalAmount - debtPayments.sumOf { it.amount }
+                if (remaining > 0.0) {
+                    lendTotalsByCurrency[debt.currency] = (lendTotalsByCurrency[debt.currency] ?: 0.0) + remaining
                 }
+                val desc = debt.description?.ifEmpty { null } ?: "General"
+                statementBuilder.append("· ${debt.currency} ${String.format(Locale.US, "%.2f", debt.originalAmount)} ($desc)\n")
             }
-            statementBuilder.append("\n")
+            if (lendTotalsByCurrency.isNotEmpty()) {
+                val totalLendStr = lendTotalsByCurrency.entries.joinToString(", ") { "${it.key} ${String.format(Locale.US, "%.2f", it.value)}" }
+                statementBuilder.append("👉 Total Remaining Lend (إقراض): $totalLendStr\n\n")
+            } else {
+                statementBuilder.append("👉 Total Remaining Lend (إقراض): Fully Settled\n\n")
+            }
         }
+
+        if (borrowDebts.isNotEmpty()) {
+            statementBuilder.append("🔴 Borrow List (استقراض):\n")
+            borrowDebts.forEach { debt ->
+                val debtPayments = payments.filter { it.debtId == debt.id }
+                val remaining = debt.originalAmount - debtPayments.sumOf { it.amount }
+                if (remaining > 0.0) {
+                    borrowTotalsByCurrency[debt.currency] = (borrowTotalsByCurrency[debt.currency] ?: 0.0) + remaining
+                }
+                val desc = debt.description?.ifEmpty { null } ?: "General"
+                statementBuilder.append("· ${debt.currency} ${String.format(Locale.US, "%.2f", debt.originalAmount)} ($desc)\n")
+            }
+            if (borrowTotalsByCurrency.isNotEmpty()) {
+                val totalBorrowStr = borrowTotalsByCurrency.entries.joinToString(", ") { "${it.key} ${String.format(Locale.US, "%.2f", it.value)}" }
+                statementBuilder.append("👉 Total Remaining Borrow (استقراض): $totalBorrowStr\n\n")
+            } else {
+                statementBuilder.append("👉 Total Remaining Borrow (استقراض): Fully Settled\n\n")
+            }
+        }
+
+        if (lendDebts.isEmpty() && borrowDebts.isEmpty()) {
+            statementBuilder.append("Fully Settled (0.00)\n\n")
+        }
+
         statementBuilder.append("Generated via Thimma (ذمّة)")
         statementBuilder.toString()
+    }
+
+    // PDF Statement Generator
+    val generatePdfStatement: (PersonEntity, List<DebtEntity>) -> File = { p, pDebts ->
+        val pdfDocument = PdfDocument()
+        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4 size
+        val page = pdfDocument.startPage(pageInfo)
+        val canvas = page.canvas
+
+        val paint = android.graphics.Paint()
+        val titlePaint = android.graphics.Paint().apply {
+            textSize = 20f
+            isFakeBoldText = true
+            color = android.graphics.Color.BLACK
+        }
+        val subtitlePaint = android.graphics.Paint().apply {
+            textSize = 12f
+            color = android.graphics.Color.DKGRAY
+        }
+        val textPaint = android.graphics.Paint().apply {
+            textSize = 11f
+            color = android.graphics.Color.BLACK
+        }
+        val boldTextPaint = android.graphics.Paint().apply {
+            textSize = 11f
+            isFakeBoldText = true
+            color = android.graphics.Color.BLACK
+        }
+
+        var y = 40f
+        canvas.drawText("Thimma (ذمّة) — Account Statement", 40f, y, titlePaint)
+        y += 24f
+        canvas.drawText("Contact: ${p.name} ${p.phone ?: ""}", 40f, y, subtitlePaint)
+        y += 16f
+        canvas.drawText("Generated on: ${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())}", 40f, y, subtitlePaint)
+        y += 24f
+
+        paint.strokeWidth = 1f
+        paint.color = android.graphics.Color.LTGRAY
+        canvas.drawLine(40f, y, 555f, y, paint)
+        y += 20f
+
+        canvas.drawText("Date", 40f, y, boldTextPaint)
+        canvas.drawText("Type", 140f, y, boldTextPaint)
+        canvas.drawText("Amount", 240f, y, boldTextPaint)
+        canvas.drawText("Description", 360f, y, boldTextPaint)
+        y += 18f
+
+        pDebts.forEach { debt ->
+            val typeStr = if (debt.direction == "RECEIVABLE") "Lend" else "Borrow"
+            val dateStr = SimpleDateFormat("MMM dd, yyyy", Locale.US).format(Date(debt.createdDate))
+            val amtStr = "${debt.currency} ${String.format(Locale.US, "%.2f", debt.originalAmount)}"
+            val descStr = debt.description ?: "General"
+
+            canvas.drawText(dateStr, 40f, y, textPaint)
+            canvas.drawText(typeStr, 140f, y, textPaint)
+            canvas.drawText(amtStr, 240f, y, textPaint)
+            canvas.drawText(if (descStr.length > 25) descStr.substring(0, 25) + "..." else descStr, 360f, y, textPaint)
+            y += 20f
+        }
+
+        pdfDocument.finishPage(page)
+
+        val pdfFile = File(context.cacheDir, "statement_${p.name.replace(" ", "_")}.pdf")
+        pdfFile.outputStream().use { out ->
+            pdfDocument.writeTo(out)
+        }
+        pdfDocument.close()
+        pdfFile
+    }
+
+    // Detect installed WhatsApp packages
+    val isPackageInstalled: (String) -> Boolean = { pkgName ->
+        try {
+            context.packageManager.getPackageInfo(pkgName, 0)
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     Scaffold(
@@ -199,8 +404,8 @@ fun PersonDetailScreen(
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )
                         } else {
-                            TextButton(onClick = { showEditContactDialog = true }) {
-                                Text(text = "+ Add Phone Number", style = MaterialTheme.typography.bodySmall)
+                            OutlinedButton(onClick = { launchLinkContact() }) {
+                                Text(text = "Link to Phone Contact", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -247,7 +452,7 @@ fun PersonDetailScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = debt.description?.ifEmpty { null } ?: if (isReceivable) "They owe me" else "I owe them",
+                                    text = debt.description?.ifEmpty { null } ?: if (isReceivable) "Lend" else "Borrow",
                                     fontWeight = FontWeight.Bold,
                                     style = MaterialTheme.typography.bodyLarge
                                 )
@@ -365,6 +570,12 @@ fun PersonDetailScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedButton(
+                        onClick = { launchLinkContact() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = "Link to Phone Contact")
+                    }
+                    OutlinedButton(
                         onClick = { imagePickerLauncher.launch("image/*") },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -398,7 +609,7 @@ fun PersonDetailScreen(
         )
     }
 
-    // Share Options Dialog (WhatsApp, SMS, General Share)
+    // Share Options Dialog (WhatsApp, SMS, General Share, PDF)
     if (showShareDialog) {
         val statementText = buildStatementText()
         AlertDialog(
@@ -411,22 +622,31 @@ fun PersonDetailScreen(
                         Button(
                             onClick = {
                                 showShareDialog = false
-                                try {
-                                    val url = "https://api.whatsapp.com/send?phone=${person?.phone}&text=${Uri.encode(statementText)}"
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                val hasStd = isPackageInstalled("com.whatsapp")
+                                val hasBiz = isPackageInstalled("com.whatsapp.w4b")
+
+                                if (hasStd && hasBiz) {
+                                    showWhatsAppAppChooserDialog = true
+                                } else {
+                                    try {
+                                        val targetPkg = if (hasBiz) "com.whatsapp.w4b" else "com.whatsapp"
+                                        val url = "https://api.whatsapp.com/send?phone=${person?.phone}&text=${Uri.encode(statementText)}"
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                            setPackage(targetPkg)
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        val sendIntent = Intent().apply {
+                                            action = Intent.ACTION_SEND
+                                            putExtra(Intent.EXTRA_TEXT, statementText)
+                                            type = "text/plain"
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(Intent.createChooser(sendIntent, "Share Statement").apply {
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        })
                                     }
-                                    context.startActivity(intent)
-                                } catch (_: Exception) {
-                                    val sendIntent = Intent().apply {
-                                        action = Intent.ACTION_SEND
-                                        putExtra(Intent.EXTRA_TEXT, statementText)
-                                        type = "text/plain"
-                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    }
-                                    context.startActivity(Intent.createChooser(sendIntent, "Share Statement").apply {
-                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    })
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()
@@ -447,22 +667,38 @@ fun PersonDetailScreen(
                         ) {
                             Text(text = "Send via SMS")
                         }
-                    } else {
-                        Text(
-                            text = "No phone number saved for this contact. Add a phone number to share directly via WhatsApp or SMS.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        OutlinedButton(
-                            onClick = {
-                                showShareDialog = false
-                                showEditContactDialog = true
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(text = "Add Phone Number")
-                        }
                     }
+
+                    // Share PDF Statement Button
+                    Button(
+                        onClick = {
+                            showShareDialog = false
+                            if (person != null) {
+                                try {
+                                    val pdfFile = generatePdfStatement(person, personDebts)
+                                    val contentUri = FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        pdfFile
+                                    )
+                                    val pdfIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "application/pdf"
+                                        putExtra(Intent.EXTRA_STREAM, contentUri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(Intent.createChooser(pdfIntent, "Share PDF Statement").apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    })
+                                } catch (_: Exception) {}
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                    ) {
+                        Text(text = "Share PDF Statement 📄")
+                    }
+
                     OutlinedButton(
                         onClick = {
                             showShareDialog = false
@@ -485,6 +721,58 @@ fun PersonDetailScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showShareDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    // Multi-WhatsApp App Chooser Dialog
+    if (showWhatsAppAppChooserDialog) {
+        val statementText = buildStatementText()
+        AlertDialog(
+            onDismissRequest = { showWhatsAppAppChooserDialog = false },
+            title = { Text(text = "Select WhatsApp App") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            showWhatsAppAppChooserDialog = false
+                            try {
+                                val url = "https://api.whatsapp.com/send?phone=${person?.phone}&text=${Uri.encode(statementText)}"
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                    setPackage("com.whatsapp")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = "WhatsApp Messenger")
+                    }
+                    Button(
+                        onClick = {
+                            showWhatsAppAppChooserDialog = false
+                            try {
+                                val url = "https://api.whatsapp.com/send?phone=${person?.phone}&text=${Uri.encode(statementText)}"
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                    setPackage("com.whatsapp.w4b")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    ) {
+                        Text(text = "WhatsApp Business")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showWhatsAppAppChooserDialog = false }) {
                     Text(stringResource(R.string.cancel))
                 }
             }

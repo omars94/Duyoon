@@ -5,8 +5,8 @@
     <string name="nav_history">السجل</string>
     <string name="nav_settings">الإعدادات</string>
 
-    <string name="owed_to_me">إلك (مستحقات)</string>
-    <string name="i_owe">عليك (التزامات)</string>
+    <string name="owed_to_me">إقراض (ديون لي)</string>
+    <string name="i_owe">استقراض (ديون عليّ)</string>
     <string name="people_count">%d أشخاص</string>
     <string name="recent_activity">النشاط الأخير</string>
     <string name="add_new_debt">إضافة دين جديد</string>
@@ -14,9 +14,13 @@
     <string name="view_all">عرض الكل</string>
 
     <string name="new_debt">دين جديد</string>
-    <string name="debt_type">نوع الدين</string>
-    <string name="they_owe_me">لهم عندي (إلك)</string>
-    <string name="i_owe_them">لي عندهم (عليك)</string>
+    <string name="debt_type">نوع العملية</string>
+    <string name="they_owe_me">إقراض</string>
+    <string name="i_owe_them">استقراض</string>
+    <string name="tab_lend">إقراض</string>
+    <string name="tab_borrow">استقراض</string>
+    <string name="add_person_chip">إضافة</string>
+    <string name="default_direction">النوع الافتراضي لإدخال الدين</string>
     <string name="person">الشخص</string>
     <string name="select_person">اختر أو أضف شخصاً</string>
     <string name="amount">المبلغ</string>
@@ -36,8 +40,8 @@
 
     <string name="search_hint">بحث عن الأشخاص، الوصف...</string>
     <string name="filter_all">الكل</string>
-    <string name="filter_owed_to_me">إلك</string>
-    <string name="filter_i_owe">عليك</string>
+    <string name="filter_owed_to_me">إقراض</string>
+    <string name="filter_i_owe">استقراض</string>
     <string name="filter_settled">المسددة</string>
 
     <string name="language">اللغة</string>

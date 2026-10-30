@@ -50,108 +50,130 @@ class MainActivity : AppCompatActivity() {
             val isArabic = langCode.equals("ar", ignoreCase = true)
             val layoutDirection = if (isArabic) LayoutDirection.Rtl else LayoutDirection.Ltr
 
+            val isAppLockEnabled by viewModel.isAppLockEnabled.collectAsState()
+            var isUnlocked by remember { mutableStateOf(!isAppLockEnabled || !viewModel.hasAppPin()) }
+
             CompositionLocalProvider(
                 LocalLayoutDirection provides layoutDirection
             ) {
                 ThimmaTheme {
-                    val navController = rememberNavController()
-                    val items = listOf(Screen.Home, Screen.People, Screen.History, Screen.Settings)
+                    if (!isUnlocked && isAppLockEnabled && viewModel.hasAppPin()) {
+                        AppLockScreen(
+                            mode = AppLockMode.UNLOCK,
+                            viewModel = viewModel,
+                            onSuccess = { isUnlocked = true }
+                        )
+                    } else {
+                        val navController = rememberNavController()
+                        val items = listOf(Screen.Home, Screen.People, Screen.History, Screen.Settings)
 
-                    Scaffold(
-                        modifier = Modifier.fillMaxSize(),
-                        bottomBar = {
-                            val navBackStackEntry by navController.currentBackStackEntryAsState()
-                            val currentRoute = navBackStackEntry?.destination?.route
+                        Scaffold(
+                            modifier = Modifier.fillMaxSize(),
+                            bottomBar = {
+                                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                                val currentRoute = navBackStackEntry?.destination?.route
 
-                            if (currentRoute in items.map { it.route }) {
-                                NavigationBar {
-                                    items.forEach { screen ->
-                                        NavigationBarItem(
-                                            icon = { Icon(screen.icon, contentDescription = null) },
-                                            label = { Text(stringResource(screen.titleRes)) },
-                                            selected = currentRoute == screen.route,
-                                            onClick = {
-                                                if (currentRoute != screen.route) {
-                                                    navController.navigate(screen.route) {
-                                                        popUpTo(navController.graph.startDestinationId) {
-                                                            saveState = true
+                                if (currentRoute in items.map { it.route }) {
+                                    NavigationBar {
+                                        items.forEach { screen ->
+                                            NavigationBarItem(
+                                                icon = { Icon(screen.icon, contentDescription = null) },
+                                                label = { Text(stringResource(screen.titleRes)) },
+                                                selected = currentRoute == screen.route,
+                                                onClick = {
+                                                    if (currentRoute != screen.route) {
+                                                        navController.navigate(screen.route) {
+                                                            popUpTo(navController.graph.startDestinationId) {
+                                                                saveState = true
+                                                            }
+                                                            launchSingleTop = true
+                                                            restoreState = true
                                                         }
-                                                        launchSingleTop = true
-                                                        restoreState = true
                                                     }
                                                 }
-                                            }
-                                        )
+                                            )
+                                        }
                                     }
                                 }
                             }
-                        }
-                    ) { innerPadding ->
-                        NavHost(
-                            navController = navController,
-                            startDestination = Screen.Home.route,
-                            modifier = Modifier.padding(innerPadding)
-                        ) {
-                            composable(Screen.Home.route) {
-                                HomeScreen(
-                                    viewModel = viewModel,
-                                    onNavigateToAddDebt = { navController.navigate("add_debt") },
-                                    onNavigateToPerson = { personId -> navController.navigate("person_detail/$personId") },
-                                    onNavigateToHistory = { navController.navigate(Screen.History.route) }
-                                )
-                            }
-                            composable(Screen.People.route) {
-                                PeopleScreen(
-                                    viewModel = viewModel,
-                                    onNavigateToPersonDetail = { personId -> navController.navigate("person_detail/$personId") }
-                                )
-                            }
-                            composable(Screen.History.route) {
-                                HistoryScreen(viewModel = viewModel)
-                            }
-                            composable(Screen.Settings.route) {
-                                SettingsScreen(viewModel = viewModel)
-                            }
-                            composable("add_debt") {
-                                AddDebtScreen(
-                                    viewModel = viewModel,
-                                    onBack = { navController.popBackStack() }
-                                )
-                            }
-                            composable(
-                                route = "add_debt_for_person/{personId}",
-                                arguments = listOf(navArgument("personId") { type = NavType.LongType })
-                            ) { backStackEntry ->
-                                val personId = backStackEntry.arguments?.getLong("personId") ?: 0L
-                                AddDebtScreen(
-                                    initialPersonId = personId,
-                                    viewModel = viewModel,
-                                    onBack = { navController.popBackStack() }
-                                )
-                            }
-                            composable(
-                                route = "person_detail/{personId}",
-                                arguments = listOf(navArgument("personId") { type = NavType.LongType })
-                            ) { backStackEntry ->
-                                val personId = backStackEntry.arguments?.getLong("personId") ?: 0L
-                                PersonDetailScreen(
-                                    personId = personId,
-                                    viewModel = viewModel,
-                                    onBack = { navController.popBackStack() },
-                                    onNavigateToAddDebtForPerson = { id -> navController.navigate("add_debt_for_person/$id") },
-                                    onNavigateToEditDebt = { debtId -> navController.navigate("edit_debt/$debtId") }
-                                )
-                            }
-                            composable(
-                                route = "edit_debt/{debtId}",
-                                arguments = listOf(navArgument("debtId") { type = NavType.LongType })
-                            ) { backStackEntry ->
-                                val debtId = backStackEntry.arguments?.getLong("debtId") ?: 0L
-                                EditDebtScreen(
-                                    debtId = debtId,
-                                    viewModel = viewModel,
-                                    onBack = { navController.popBackStack() }
-                                )
+                        ) { innerPadding ->
+                            NavHost(
+                                navController = navController,
+                                startDestination = Screen.Home.route,
+                                modifier = Modifier.padding(innerPadding)
+                            ) {
+                                composable(Screen.Home.route) {
+                                    HomeScreen(
+                                        viewModel = viewModel,
+                                        onNavigateToAddDebtWithDir = { dir -> navController.navigate("add_debt_with_dir/$dir") },
+                                        onNavigateToPerson = { personId -> navController.navigate("person_detail/$personId") },
+                                        onNavigateToHistory = { navController.navigate(Screen.History.route) }
+                                    )
+                                }
+                                composable(Screen.People.route) {
+                                    PeopleScreen(
+                                        viewModel = viewModel,
+                                        onNavigateToPersonDetail = { personId -> navController.navigate("person_detail/$personId") }
+                                    )
+                                }
+                                composable(Screen.History.route) {
+                                    HistoryScreen(viewModel = viewModel)
+                                }
+                                composable(Screen.Settings.route) {
+                                    SettingsScreen(viewModel = viewModel)
+                                }
+                                composable("add_debt") {
+                                    AddDebtScreen(
+                                        viewModel = viewModel,
+                                        onBack = { navController.popBackStack() }
+                                    )
+                                }
+                                composable(
+                                    route = "add_debt_with_dir/{direction}",
+                                    arguments = listOf(navArgument("direction") { type = NavType.StringType })
+                                ) { backStackEntry ->
+                                    val dir = backStackEntry.arguments?.getString("direction") ?: "RECEIVABLE"
+                                    AddDebtScreen(
+                                        initialDirection = dir,
+                                        viewModel = viewModel,
+                                        onBack = { navController.popBackStack() }
+                                    )
+                                }
+                                composable(
+                                    route = "add_debt_for_person/{personId}",
+                                    arguments = listOf(navArgument("personId") { type = NavType.LongType })
+                                ) { backStackEntry ->
+                                    val personId = backStackEntry.arguments?.getLong("personId") ?: 0L
+                                    AddDebtScreen(
+                                        initialPersonId = personId,
+                                        viewModel = viewModel,
+                                        onBack = { navController.popBackStack() }
+                                    )
+                                }
+                                composable(
+                                    route = "person_detail/{personId}",
+                                    arguments = listOf(navArgument("personId") { type = NavType.LongType })
+                                ) { backStackEntry ->
+                                    val personId = backStackEntry.arguments?.getLong("personId") ?: 0L
+                                    PersonDetailScreen(
+                                        personId = personId,
+                                        viewModel = viewModel,
+                                        onBack = { navController.popBackStack() },
+                                        onNavigateToAddDebtForPerson = { id -> navController.navigate("add_debt_for_person/$id") },
+                                        onNavigateToEditDebt = { debtId -> navController.navigate("edit_debt/$debtId") }
+                                    )
+                                }
+                                composable(
+                                    route = "edit_debt/{debtId}",
+                                    arguments = listOf(navArgument("debtId") { type = NavType.LongType })
+                                ) { backStackEntry ->
+                                    val debtId = backStackEntry.arguments?.getLong("debtId") ?: 0L
+                                    EditDebtScreen(
+                                        debtId = debtId,
+                                        viewModel = viewModel,
+                                        onBack = { navController.popBackStack() }
+                                    )
+                                }
                             }
                         }
                     }

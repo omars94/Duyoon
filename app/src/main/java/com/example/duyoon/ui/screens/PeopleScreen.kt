@@ -1,5 +1,10 @@
 package com.example.duyoon.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.ContactsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -9,17 +14,22 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.example.duyoon.R
+import com.example.duyoon.data.PersonEntity
 import com.example.duyoon.ui.theme.PrimaryGreen
 import com.example.duyoon.ui.theme.SecondaryOrange
 import com.example.duyoon.ui.viewmodel.ThimmaViewModel
@@ -31,14 +41,84 @@ fun PeopleScreen(
     viewModel: ThimmaViewModel,
     onNavigateToPersonDetail: (Long) -> Unit
 ) {
+    val context = LocalContext.current
     val persons by viewModel.persons.collectAsState()
     val debts by viewModel.debts.collectAsState()
     val payments by viewModel.payments.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
-    var showAddPersonDialog by remember { mutableStateOf(false) }
+    var showAddPersonOptionDialog by remember { mutableStateOf(false) }
+    var showManualAddPersonDialog by remember { mutableStateOf(false) }
+    var personToDelete by remember { mutableStateOf<PersonEntity?>(null) }
+
     var newPersonName by remember { mutableStateOf("") }
     var newPersonPhone by remember { mutableStateOf("") }
+
+    // Contact Picker Launcher
+    val contactPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickContact()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                var name: String? = null
+                var phone: String? = null
+
+                val cursor = context.contentResolver.query(uri, null, null, null, null)
+                cursor?.use { c ->
+                    if (c.moveToFirst()) {
+                        val nameIdx = c.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME)
+                        if (nameIdx >= 0) name = c.getString(nameIdx)
+
+                        val phoneIdx = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                        if (phoneIdx >= 0) {
+                            phone = c.getString(phoneIdx)
+                        } else {
+                            val idIdx = c.getColumnIndex(ContactsContract.Contacts._ID)
+                            if (idIdx >= 0) {
+                                val contactId = c.getString(idIdx)
+                                val pCursor = context.contentResolver.query(
+                                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                                    arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                                    "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
+                                    arrayOf(contactId),
+                                    null
+                                )
+                                pCursor?.use { pc ->
+                                    if (pc.moveToFirst()) {
+                                        phone = pc.getString(0)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!name.isNullOrBlank()) {
+                    viewModel.addPerson(name.trim(), phone?.trim(), null)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // Permission Launcher
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            contactPickerLauncher.launch(null)
+        }
+    }
+
+    val launchContactPicker = {
+        val permissionState = ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CONTACTS)
+        if (permissionState == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            contactPickerLauncher.launch(null)
+        } else {
+            permissionLauncher.launch(android.Manifest.permission.READ_CONTACTS)
+        }
+    }
 
     val filteredPersons = persons.filter {
         it.name.contains(searchQuery, ignoreCase = true) ||
@@ -48,16 +128,15 @@ fun PeopleScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(text = stringResource(R.string.nav_people)) },
-                actions = {
-                    IconButton(onClick = { showAddPersonDialog = true }) {
-                        Icon(imageVector = Icons.Default.Add, contentDescription = "Add Person")
-                    }
-                }
+                title = { Text(text = stringResource(R.string.nav_people)) }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddPersonDialog = true }) {
+            FloatingActionButton(
+                onClick = { showAddPersonOptionDialog = true },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
                 Icon(imageVector = Icons.Default.Add, contentDescription = "Add Person")
             }
         }
@@ -66,8 +145,8 @@ fun PeopleScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Search Bar
             OutlinedTextField(
@@ -82,13 +161,13 @@ fun PeopleScreen(
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 items(filteredPersons) { person ->
                     val personDebts = debts.filter { it.personId == person.id }
-                    
-                    var receivableSummary = mutableMapOf<String, Double>()
-                    var payableSummary = mutableMapOf<String, Double>()
+
+                    val receivableSummary = mutableMapOf<String, Double>()
+                    val payableSummary = mutableMapOf<String, Double>()
 
                     personDebts.forEach { debt ->
                         val debtPayments = payments.filter { it.debtId == debt.id }
@@ -112,13 +191,13 @@ fun PeopleScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(48.dp)
+                                    .size(40.dp)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.surfaceVariant),
                                 contentAlignment = Alignment.Center
@@ -126,14 +205,15 @@ fun PeopleScreen(
                                 Icon(
                                     imageVector = Icons.Default.Person,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = person.name,
                                     fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.titleMedium
+                                    style = MaterialTheme.typography.bodyLarge
                                 )
                                 if (!person.phone.isNullOrEmpty()) {
                                     Text(
@@ -165,10 +245,32 @@ fun PeopleScreen(
                                 if (receivableSummary.isEmpty() && payableSummary.isEmpty()) {
                                     Text(
                                         text = "Settled",
-                                        style = MaterialTheme.typography.bodyMedium,
+                                        style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                                     )
                                 }
+                            }
+                            IconButton(
+                                onClick = { onNavigateToPersonDetail(person.id) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Share Statement",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { personToDelete = person },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete Person",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
                     }
@@ -177,10 +279,46 @@ fun PeopleScreen(
         }
     }
 
-    if (showAddPersonDialog) {
+    // Add Person Option Dialog
+    if (showAddPersonOptionDialog) {
         AlertDialog(
-            onDismissRequest = { showAddPersonDialog = false },
+            onDismissRequest = { showAddPersonOptionDialog = false },
             title = { Text(text = "Add Person") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = {
+                            showAddPersonOptionDialog = false
+                            launchContactPicker()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = "Import from Contacts")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            showAddPersonOptionDialog = false
+                            showManualAddPersonDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = "Add Manually")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showAddPersonOptionDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (showManualAddPersonDialog) {
+        AlertDialog(
+            onDismissRequest = { showManualAddPersonDialog = false },
+            title = { Text(text = "Add Person Manually") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
@@ -204,7 +342,7 @@ fun PeopleScreen(
                             viewModel.addPerson(newPersonName.trim(), newPersonPhone.trim().ifEmpty { null }, null)
                             newPersonName = ""
                             newPersonPhone = ""
-                            showAddPersonDialog = false
+                            showManualAddPersonDialog = false
                         }
                     }
                 ) {
@@ -212,7 +350,34 @@ fun PeopleScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddPersonDialog = false }) {
+                TextButton(onClick = { showManualAddPersonDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    // Delete Person Confirmation Dialog
+    if (personToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { personToDelete = null },
+            title = { Text(text = "Delete Person") },
+            text = {
+                Text(text = "Are you sure you want to delete ${personToDelete?.name}? This will also delete all associated debts and payment history.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deletePerson(personToDelete!!)
+                        personToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { personToDelete = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             }
